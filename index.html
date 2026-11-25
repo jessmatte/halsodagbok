@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Min Hälsodagbok - Korrelation & Kausalitet</title>
+    <!-- Chart.js & PapaParse -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; margin: 0; padding: 24px; background: #f4f6f9; color: #202124; }
+        header { margin-bottom: 24px; }
+        h1 { color: #1a73e8; margin: 0 0 8px 0; font-size: 26px; }
+        p { color: #5f6368; margin: 0; font-size: 15px; }
+        
+        .control-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); margin-bottom: 24px; border: 1px solid #e0e0e0; display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
+        .control-group { display: flex; flex-direction: column; gap: 6px; }
+        label { font-weight: 600; font-size: 14px; color: #3c4043; }
+        input[type="email"], select, button { padding: 10px 12px; border: 1px solid #dadce0; border-radius: 8px; background: white; font-size: 14px; }
+        input[type="email"] { min-width: 260px; }
+        button { background-color: #1a73e8; color: white; border: none; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+        button:hover { background-color: #1557b0; }
+        
+        .status-message { font-size: 13px; color: #5f6368; align-self: center; font-style: italic; }
+
+        .main-dashboard { display: grid; grid-template-columns: 1fr 380px; gap: 24px; }
+        @media (max-width: 992px) {
+            .main-dashboard { grid-template-columns: 1fr; }
+        }
+
+        .card { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); border: 1px solid #e0e0e0; }
+        
+        .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+        .chart-title { font-size: 20px; font-weight: 600; color: #1a73e8; margin: 0; }
+        .r2-badge { background: #e8f0fe; color: #1a73e8; font-weight: bold; font-size: 16px; padding: 6px 12px; border-radius: 8px; }
+        
+        .stats-banner { margin-top: 16px; padding: 12px 16px; background: #f8f9fa; border-radius: 8px; font-size: 14px; color: #3c4043; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid #1a73e8; flex-wrap: wrap; gap: 10px; }
+        canvas { max-height: 420px; }
+
+        /* Stats & Benchmarks Sidebar */
+        .stats-panel-title { font-size: 18px; font-weight: 600; color: #202124; margin: 0 0 16px 0; padding-bottom: 8px; border-bottom: 2px solid #f1f3f4; }
+        
+        .stat-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        .stat-table th, .stat-table td { padding: 8px 10px; text-align: left; font-size: 14px; border-bottom: 1px solid #f1f3f4; }
+        .stat-table th { color: #5f6368; font-weight: 600; }
+        .stat-table td.val { text-align: right; font-weight: bold; color: #202124; }
+
+        /* Tooltip styling for explanations */
+        .info-icon {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            background-color: #e8f0fe;
+            color: #1a73e8;
+            border-radius: 50%;
+            text-align: center;
+            font-size: 11px;
+            line-height: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-left: 6px;
+            position: relative;
+        }
+
+        .info-icon:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #323232;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: normal;
+            white-space: normal;
+            width: 220px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 100;
+            line-height: 1.3;
+        }
+
+        .benchmark-card { padding: 16px; border-radius: 8px; border: 1px solid #e0e0e0; background: #fafafa; }
+        .benchmark-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .benchmark-title { font-size: 14px; font-weight: 600; color: #3c4043; }
+        
+        /* Status Badges */
+        .status-badge { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 12px; text-transform: uppercase; }
+        .status-green { background-color: #e6f4ea; color: #137333; border: 1px solid #ceead6; }
+        .status-yellow { background-color: #fef7e0; color: #b06000; border: 1px solid #feefc3; }
+        .status-red { background-color: #fce8e6; color: #c5221f; border: 1px solid #fad2cf; }
+
+        .benchmark-text { font-size: 13px; color: #5f6368; margin: 0 0 8px 0; line-height: 1.4; }
+        .benchmark-target { font-size: 12px; color: #70757a; font-style: italic; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>📊 Min Hälsodagbok — Analysverktyg</h1>
+        <p>Ange din e-postadress för att hämta dina resultat och analysera dina hälsofaktorer.</p>
+    </header>
+
+    <div class="control-card">
+        <div class="control-group" id="emailGroup">
+            <label for="studentEmail">1. Ange din e-postadress:</label>
+            <div style="display: flex; gap: 8px;">
+                <input type="email" id="studentEmail" placeholder="student1@gmail.com">
+                <button id="loadStudentBtn">Hämta data</button>
+            </div>
+        </div>
+
+        <div class="control-group" id="factorGroup" style="display: none;">
+            <label for="factorSelect">2. Välj faktor att analysera:</label>
+            <select id="factorSelect"></select>
+        </div>
+
+        <span class="status-message" id="statusMessage">Laddar data...</span>
+    </div>
+
+    <div class="main-dashboard" id="dashboardCard" style="display: none;">
+        <!-- Left: Scatter Plot -->
+        <div class="card">
+            <div class="chart-header">
+                <h3 class="chart-title" id="chartTitle">Välj faktor ovan</h3>
+                <span class="r2-badge" id="r2Badge">R² = --</span>
+            </div>
+            
+            <canvas id="mainChart"></canvas>
+            
+            <div class="stats-banner" id="statsBanner">
+                <span id="statDays">Antal dagar: 0</span>
+                <span id="statTrend">Trend: --</span>
+                <span id="statEquation">Linje: y = kx + m</span>
+            </div>
+        </div>
+
+        <!-- Right: Statistical Analysis & Recommendations -->
+        <div class="card">
+            <h3 class="stats-panel-title">Statistisk sammanfattning</h3>
+            
+            <table class="stat-table">
+                <thead>
+                    <tr>
+                        <th>Statistik</th>
+                        <th style="text-align: right;">Värde</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            Medelvärde
+                            <span class="info-icon" data-tooltip="Summan av alla värden delat med antalet dagar (det genomsnittliga värdet).">?</span>
+                        </td>
+                        <td class="val" id="valMean">-</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            Median
+                            <span class="info-icon" data-tooltip="Det mittersta värdet när alla observationer sorteras i storleksordning.">?</span>
+                        </td>
+                        <td class="val" id="valMedian">-</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            Typvärde
+                            <span class="info-icon" data-tooltip="Det värde som förekommer allra oftast i din dataserie.">?</span>
+                        </td>
+                        <td class="val" id="valMode">-</td>
+                    </tr>
+                    <tr><td>Lägsta värde</td><td class="val" id="valMin">-</td></tr>
+                    <tr><td>Högsta värde</td><td class="val" id="valMax">-</td></tr>
+                </tbody>
+            </table>
+
+            <h3 class="stats-panel-title">Nationella rekommendationer</h3>
+            <div class="benchmark-card" id="benchmarkCard">
+                <div class="benchmark-header">
+                    <span class="benchmark-title" id="bmTitle">Jämförelse</span>
+                    <span class="status-badge status-green" id="bmBadge">Inom mål</span>
+                </div>
+                <p class="benchmark-text" id="bmText">Välj en faktor för att se jämförelse mot rekommendationer för 16–18-åringar.</p>
+                <div class="benchmark-target" id="bmTarget">Riktmärke: --</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allCsvRows = [];
+        let studentRows = [];
+        let detectedFactors = {};
+        let mainChartInstance = null;
+
+        const NATIONAL_BENCHMARKS = {
+            'Sömn (timmar)': {
+                targetText: '8–10 timmar per natt (Folkhälsomyndigheten)',
+                evaluate: (mean) => {
+                    if (mean >= 8 && mean <= 10) return { status: 'green', label: 'Bra sömnmängd', desc: 'Ditt medelvärde ligger helt inom rekommendationen för ungdomar.' };
+                    if (mean >= 7 && mean < 8) return { status: 'yellow', label: 'Lite låg sömn', desc: 'Du ligger något under den rekommenderade mängden sömn.' };
+                    if (mean < 7) return { status: 'red', label: 'För lite sömn', desc: 'Ditt genomsnitt ligger påtagligt under rekommendationen på 8–10 timmar.' };
+                    return { status: 'yellow', label: 'Hög sömnmängd', desc: 'Du sover mer än genomsnittet för din åldersgrupp.' };
+                }
+            },
+            'Skärmtid (timmar)': {
+                targetText: 'Max 2–3 timmar per dag på fritiden (Folkhälsomyndigheten)',
+                evaluate: (mean) => {
+                    if (mean <= 3) return { status: 'green', label: 'Bra skärmtid', desc: 'Din skärmtid ligger inom de hälsosamma rekommendationerna.' };
+                    if (mean > 3 && mean <= 5) return { status: 'yellow', label: 'Måttlig skärmtid', desc: 'Du ligger något över den rekommenderade fritidsskärmtiden.' };
+                    return { status: 'red', label: 'Hög skärmtid', desc: 'Din skärmtid är avsevärt högre än rekommendationen på max 2–3 timmar.' };
+                }
+            },
+            'Steg (1000-tal)': {
+                targetText: 'Minst 10 000 steg per dag (~60 min fysisk aktivitet)',
+                evaluate: (mean) => {
+                    if (mean >= 10) return { status: 'green', label: 'Bra aktivitet', desc: 'Du uppnår rekommendationen för daglig rörelse.' };
+                    if (mean >= 7 && mean < 10) return { status: 'yellow', label: 'Nära målet', desc: 'Du är nära målet på 10 000 steg om dagen.' };
+                    return { status: 'red', label: 'Låg aktivitet', desc: 'Ditt genomsnitt ligger under den rekommenderade dagliga aktiviteten.' };
+                }
+            },
+            'Måltider (antal)': {
+                targetText: '3 huvudmåltider per dag (Frukost, lunch, middag)',
+                evaluate: (mean) => {
+                    if (mean >= 2.8 && mean <= 3.2) return { status: 'green', label: 'Regelbundet', desc: 'Du äter regelbundet tre huvudmåltider om dagen.' };
+                    if (mean >= 2.0 && mean < 2.8) return { status: 'yellow', label: 'Oregelbundet', desc: 'Du hoppar ibland över någon huvudmåltid.' };
+                    return { status: 'red', label: 'För få måltider', desc: 'Ditt genomsnitt är lågt. Att hoppa över måltider kan påverka energi och mående.' };
+                }
+            },
+            'Vatten (glas)': {
+                targetText: 'Ca 6–8 glas (~1,5–2 liter) vatten per dag (Livsmedelsverket)',
+                evaluate: (mean) => {
+                    if (mean >= 6) return { status: 'green', label: 'Bra vätskebalans', desc: 'Du dricker tillräckligt med vatten för att behålla en god vätskebalans.' };
+                    if (mean >= 4 && mean < 6) return { status: 'yellow', label: 'Något lågt intag', desc: 'Du dricker något under det rekommenderade dagliga intaget av vatten.' };
+                    return { status: 'red', label: 'Lågt vattenintag', desc: 'Ditt vattenintag är lågt, vilket kan orsaka trötthet och huvudvärk.' };
+                }
+            },
+            'Energidryck (antal)': {
+                targetText: 'Begränsa intag (koffein) — Max 0–1 burk sällsynt',
+                evaluate: (mean) => {
+                    if (mean <= 0.2) return { status: 'green', label: 'Lågt/Inget intag', desc: 'Du dricker sällan eller aldrig energidryck vilket är bra för sömn och hjärta.' };
+                    if (mean > 0.2 && mean <= 1.0) return { status: 'yellow', label: 'Måttligt intag', desc: 'Du dricker energidryck regelbundet. Tänk på koffeinets påverkan på sömnen.' };
+                    return { status: 'red', label: 'Högt intag', desc: 'Ett högt intag av energidryck kan ge sömnproblem, oro och hjärtklappning.' };
+                }
+            },
+            'Nikotin (portioner)': {
+                targetText: '0 portioner per dag (Nikotinfritt — Folkhälsomyndigheten)',
+                evaluate: (mean) => {
+                    if (mean === 0) return { status: 'green', label: 'Nikotinfritt', desc: 'Du använder inte nikotin, vilket ger bäst förutsättningar för hälsa och pulshantering.' };
+                    return { status: 'red', label: 'Nikotinbruk', desc: 'Nikotin ökar stresshormoner och pulsen samt skapar starkt beroende.' };
+                }
+            }
+        };
+
+        function cleanKeyString(str) {
+            if (!str) return '';
+            return str.replace(/^\uFEFF/, '').replace(/["']/g, '').trim();
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const statusMsg = document.getElementById('statusMessage');
+
+            Papa.parse('data.csv', {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                transformHeader: function(h) {
+                    return cleanKeyString(h);
+                },
+                complete: function(results) {
+                    allCsvRows = results.data;
+                    if (allCsvRows.length > 0) {
+                        statusMsg.innerText = 'Data laddades in framgångsrikt!';
+                        statusMsg.style.color = '#137333';
+                    } else {
+                        statusMsg.innerText = 'Kunde inte hitta någon data i data.csv.';
+                        statusMsg.style.color = '#c5221f';
+                    }
+                },
+                error: function(err) {
+                    statusMsg.innerText = 'Fel vid inläsning av data.csv. Se till att filen ligger i samma mapp.';
+                    statusMsg.style.color = '#c5221f';
+                }
+            });
+        });
+
+        document.getElementById('loadStudentBtn').addEventListener('click', function() {
+            let emailInput = document.getElementById('studentEmail').value.trim().toLowerCase();
+            if (!emailInput) {
+                alert('Vänligen ange en e-postadress.');
+                return;
+            }
+
+            if (allCsvRows.length === 0) {
+                alert('Datafilen har inte hunnit laddas än eller saknas.');
+                return;
+            }
+
+            let sampleKeys = Object.keys(allCsvRows[0]);
+            let emailKey = sampleKeys.find(k => {
+                let lower = k.toLowerCase();
+                return lower.includes('e-post') || lower.includes('email') || lower.includes('epost');
+            });
+
+            if (emailKey) {
+                studentRows = allCsvRows.filter(r => r[emailKey] && String(r[emailKey]).trim().toLowerCase() === emailInput);
+            } else {
+                studentRows = allCsvRows;
+            }
+
+            if (studentRows.length === 0) {
+                alert(`Hittade ingen data för e-postadressen: ${emailInput}`);
+                return;
+            }
+
+            processStudentData(studentRows);
+        });
+
+        function processStudentData(rows) {
+            let sampleKeys = Object.keys(rows[0]);
+            
+            let wellBeingKey = sampleKeys.find(k => {
+                let lower = k.toLowerCase();
+                return lower.includes('mår') || lower.includes('mående') || lower.includes('maende') || lower.includes('mood') || lower.includes('column 1');
+            });
+            
+            if (!wellBeingKey) {
+                console.error("Available headers found in file:", sampleKeys);
+                alert(`Kunde inte hitta kolumnen för "Mående" i filen.\n\nHittade kolumner i din CSV:\n${sampleKeys.join(', ')}`);
+                return;
+            }
+
+            detectedFactors = {};
+
+            sampleKeys.forEach(key => {
+                let lower = key.toLowerCase();
+
+                if (key === wellBeingKey || lower.includes('timestamp') || lower.includes('datum') || lower.includes('e-post') || lower.includes('email') || lower.includes('epost')) return;
+
+                let cleanName = key;
+                if (lower.includes('sovit') || lower.includes('sömn') || lower.includes('somn')) cleanName = 'Sömn (timmar)';
+                else if (lower.includes('skärm') || lower.includes('skarm')) cleanName = 'Skärmtid (timmar)';
+                else if (lower.includes('steg')) cleanName = 'Steg (1000-tal)';
+                else if (lower.includes('måltid') || lower.includes('maltid')) cleanName = 'Måltider (antal)';
+                else if (lower.includes('vatten') || lower.includes('water')) cleanName = 'Vatten (glas)';
+                else if (lower.includes('energi') || lower.includes('läsk') || lower.includes('lask')) cleanName = 'Energidryck (antal)';
+                else if (lower.includes('nikotin') || lower.includes('snus') || lower.includes('vape')) cleanName = 'Nikotin (portioner)';
+
+                let points = [];
+                rows.forEach(r => {
+                    let y = parseFloat(r[wellBeingKey]);
+                    let x = parseFloat(r[key]);
+                    if (!isNaN(x) && !isNaN(y)) {
+                        points.push({ x: x, y: y });
+                    }
+                });
+
+                if (points.length > 0) {
+                    detectedFactors[cleanName] = points;
+                }
+            });
+
+            if (Object.keys(detectedFactors).length === 0) {
+                alert('Inga siffervärden hittades att analysera mot Mående.');
+                return;
+            }
+
+            let select = document.getElementById('factorSelect');
+            select.innerHTML = '';
+            
+            Object.keys(detectedFactors).forEach(factorName => {
+                let opt = document.createElement('option');
+                opt.value = factorName;
+                opt.innerText = factorName;
+                select.appendChild(opt);
+            });
+
+            document.getElementById('factorGroup').style.display = 'flex';
+            document.getElementById('dashboardCard').style.display = 'grid';
+
+            select.onchange = function() {
+                plotSelectedFactor(select.value);
+            };
+
+            plotSelectedFactor(Object.keys(detectedFactors)[0]);
+        }
+
+        function calcLinearRegression(points) {
+            let n = points.length;
+            if (n < 2) return { slope: 0, intercept: 0, r2: 0 };
+            
+            let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+            for (let p of points) {
+                sumX += p.x;
+                sumY += p.y;
+                sumXY += p.x * p.y;
+                sumX2 += p.x * p.x;
+                sumY2 += p.y * p.y;
+            }
+            
+            let denom = (n * sumX2 - sumX * sumX);
+            if (denom === 0) return { slope: 0, intercept: sumY / n, r2: 0 };
+            
+            let slope = (n * sumXY - sumX * sumY) / denom;
+            let intercept = (sumY - slope * sumX) / n;
+            
+            let rNum = (n * sumXY - sumX * sumY);
+            let rDen = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+            let r2 = rDen === 0 ? 0 : Math.pow(rNum / rDen, 2);
+            
+            return { slope, intercept, r2 };
+        }
+
+        function calculateStats(values) {
+            if (!values || values.length === 0) return { mean: 0, median: 0, mode: '-', min: 0, max: 0 };
+            
+            let sorted = [...values].sort((a, b) => a - b);
+            let sum = sorted.reduce((acc, v) => acc + v, 0);
+            let mean = sum / sorted.length;
+            
+            let mid = Math.floor(sorted.length / 2);
+            let median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+            
+            let counts = {};
+            let maxCount = 0;
+            let mode = [];
+            sorted.forEach(v => {
+                counts[v] = (counts[v] || 0) + 1;
+                if (counts[v] > maxCount) maxCount = counts[v];
+            });
+            for (let key in counts) {
+                if (counts[key] === maxCount && maxCount > 1) {
+                    mode.push(Number(key));
+                }
+            }
+            let modeStr = mode.length > 0 ? mode.join(', ') : 'Inget unikt';
+
+            return {
+                mean: mean.toFixed(1),
+                median: median.toFixed(1),
+                mode: modeStr,
+                min: sorted[0].toFixed(1),
+                max: sorted[sorted.length - 1].toFixed(1)
+            };
+        }
+
+        function plotSelectedFactor(factorName) {
+            let dataPoints = detectedFactors[factorName];
+            if (!dataPoints || dataPoints.length === 0) return;
+
+            let reg = calcLinearRegression(dataPoints);
+            let minX = Math.min(...dataPoints.map(p => p.x));
+            let maxX = Math.max(...dataPoints.map(p => p.x));
+
+            let trendlinePoints = [
+                { x: minX, y: reg.slope * minX + reg.intercept },
+                { x: maxX, y: reg.slope * maxX + reg.intercept }
+            ];
+
+            document.getElementById('chartTitle').innerText = `${factorName} vs. Mående`;
+            document.getElementById('r2Badge').innerText = `R² = ${reg.r2.toFixed(3)}`;
+            document.getElementById('statDays').innerText = `Antal loggade dagar: ${dataPoints.length}`;
+            
+            let trendText = reg.slope > 0.05 ? 'Positiv ↗' : (reg.slope < -0.05 ? 'Negativ ↘' : 'Ingen tydlig trend ➔');
+            document.getElementById('statTrend').innerHTML = `Trend: <b>${trendText}</b>`;
+            
+            let sign = reg.intercept >= 0 ? '+' : '-';
+            document.getElementById('statEquation').innerText = `Linje: y = ${reg.slope.toFixed(2)}x ${sign} ${Math.abs(reg.intercept).toFixed(2)}`;
+
+            let ctx = document.getElementById('mainChart').getContext('2d');
+            if (mainChartInstance) mainChartInstance.destroy();
+
+            mainChartInstance = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Loggade Dagar',
+                            data: dataPoints,
+                            backgroundColor: '#1a73e8',
+                            pointRadius: 7,
+                            pointHoverRadius: 10
+                        },
+                        {
+                            label: 'Trendlinje (Regressionslinje)',
+                            data: trendlinePoints,
+                            type: 'line',
+                            borderColor: '#3c4043',
+                            borderWidth: 2,
+                            borderDash: [6, 6],
+                            fill: false,
+                            pointRadius: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: true, position: 'top' }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: factorName, font: { weight: 'bold', size: 14 } },
+                            grid: { color: '#f1f3f4' }
+                        },
+                        y: {
+                            title: { display: true, text: 'Mående idag (1–10)', font: { weight: 'bold', size: 14 } },
+                            min: 0,
+                            max: 10,
+                            ticks: { stepSize: 1 },
+                            grid: { color: '#f1f3f4' }
+                        }
+                    }
+                }
+            });
+
+            let xValues = dataPoints.map(p => p.x);
+            let stats = calculateStats(xValues);
+
+            document.getElementById('valMean').innerText = stats.mean;
+            document.getElementById('valMedian').innerText = stats.median;
+            document.getElementById('valMode').innerText = stats.mode;
+            document.getElementById('valMin').innerText = stats.min;
+            document.getElementById('valMax').innerText = stats.max;
+
+            let bmTitle = document.getElementById('bmTitle');
+            let bmBadge = document.getElementById('bmBadge');
+            let bmText = document.getElementById('bmText');
+            let bmTarget = document.getElementById('bmTarget');
+
+            bmTitle.innerText = factorName;
+
+            if (NATIONAL_BENCHMARKS[factorName]) {
+                let bm = NATIONAL_BENCHMARKS[factorName];
+                let res = bm.evaluate(parseFloat(stats.mean));
+
+                bmBadge.innerText = res.label;
+                bmBadge.className = `status-badge status-${res.status}`;
+                bmText.innerText = res.desc;
+                bmTarget.innerText = `Riktmärke: ${bm.targetText}`;
+            } else {
+                bmBadge.innerText = 'Info';
+                bmBadge.className = 'status-badge status-yellow';
+                bmText.innerText = `Ditt medelvärde för ${factorName} är ${stats.mean}.`;
+                bmTarget.innerText = 'Riktmärke: Ingen specifik nationell rekommendation angiven.';
+            }
+        }
+    </script>
+</body>
+</html>
